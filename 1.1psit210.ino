@@ -27,7 +27,7 @@ void loop()
 {
   int buttonState = digitalRead(button);
 
-  if (buttonState == HIGH)
+  if (buttonState == LOW)
   {
     //E
     dot();
@@ -58,7 +58,7 @@ void loop()
     delay(2000);
 
   }
-  if (buttonState == LOW)
+  if (buttonState == HIGH)
   {
     digitalWrite(MY_LED, LOW);
   }
