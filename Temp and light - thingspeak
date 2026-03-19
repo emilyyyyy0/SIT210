@@ -58,3 +58,4 @@ Serial.print(photocell);
   delay(30000); // 30 seconds 
 }
 
+LINK TO THINGSPEAK: https://thingspeak.mathworks.com/channels/3304214/private_show 
