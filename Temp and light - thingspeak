@@ -1,0 +1,60 @@
+
+
+#include "DHT.h" 
+#include <WiFiNINA.h> 
+#include <ThingSpeak.h> 
+
+const int photocell_Pin = A1; 
+#define DHTPIN 4  
+#define DHTTYPE DHT11 
+int photocell;
+
+DHT dht(DHTPIN, DHTTYPE);
+char ssid[] = "Emily"; 
+char pass[] = "rosepatricia";
+WiFiClient client; 
+
+unsigned long channelNumber = 1; 
+
+const char * myWriteAPIKey = "Y744GVKOEXKI8BWQ"; 
+void setup() {
+  Serial.begin(9600); //starts terminal
+  dht.begin(); //sensor starts
+
+  WiFi.begin(ssid, pass); //connect to wifi
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.println("connecting"); //shows connection is being attempted 
+  }
+
+  Serial.println("Connected to wifi"); //once connected confirms 
+
+  ThingSpeak.begin(client); 
+}
+
+void loop() {
+  float temp = dht.readTemperature(); //gets temp from sensor 
+  photocell = analogRead(photocell_Pin);
+
+
+
+  if (isnan(temp)) {
+    Serial.println("Failed to read temperature"); 
+    return;
+  }
+
+Serial.print("Light: ");
+Serial.print(photocell);
+  Serial.print("\nTemp: "); //displays temp
+  Serial.println(temp);
+
+  // Sends to thingspeak
+  ThingSpeak.setField(1, temp); 
+  ThingSpeak.setField(2, photocell);
+  ThingSpeak.writeFields(channelNumber, myWriteAPIKey); 
+  
+
+  delay(30000); // 30 seconds 
+}
+
