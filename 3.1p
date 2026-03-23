@@ -1,3 +1,4 @@
+//arduino IDE: 
 #include <WiFiNINA.h>
 #include <PubSubClient.h>
 #include <BH1750.h>
@@ -83,6 +84,35 @@ void loop() {
     connectMQTT();
   }
   mqttClient.loop();
+//RED-NODE: 
+let startThreshold = 30; // trigger START above this
+let stopThreshold = 8;   // trigger STOP below this
 
+let lux = parseFloat(msg.payload);
+let sunlight = context.get("sunlight");
+
+// initialize if first run
+if (sunlight === undefined) {
+    sunlight = lux >= startThreshold;
+    context.set("sunlight", sunlight);
+}
+
+// START condition
+if (lux >= startThreshold && !sunlight) {
+    context.set("sunlight", true);
+    msg.payload = "Sunlight has STARTED on terrarium!";
+    return [msg, null];
+}
+
+// STOP condition
+if (lux <= stopThreshold) 
+{
+    context.set("sunlight", false);
+    msg.payload = "Sunlight has STOPPED on terrarium!";
+    return [msg, null];
+}
+
+// no change
+return null;
   delay(1000);
 }
