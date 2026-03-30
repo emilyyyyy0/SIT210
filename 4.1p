@@ -1,0 +1,93 @@
+
+#include <Wire.h>
+#include <BH1750.h>
+
+BH1750 lightMeter;
+
+// Pins
+const int motionPin = 2;
+const int switchPin = 3;
+const int led1 = 5;
+const int led2 = 6;
+
+// Threshold for dark
+const float DARK_THRESHOLD = 50;
+
+// Lights stay on for 5 seconds
+const unsigned long ON_TIME = 5000;
+
+// Interrupt flags
+volatile bool motionFlag = false;
+volatile bool switchFlag = false;
+
+// Timer
+unsigned long lightsOnUntil = 0;
+
+void motionISR() {
+  motionFlag = true;
+}
+
+void switchISR() {
+  switchFlag = true;
+}
+
+void setup() {
+  Serial.begin(9600);
+  Wire.begin();
+  lightMeter.begin();
+
+  pinMode(motionPin, INPUT);
+  pinMode(switchPin, INPUT_PULLUP);
+
+  pinMode(led1, OUTPUT);
+  pinMode(led2, OUTPUT);
+
+  digitalWrite(led1, LOW);
+  digitalWrite(led2, LOW);
+
+  attachInterrupt(digitalPinToInterrupt(motionPin), motionISR, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(switchPin), switchISR, FALLING);
+}
+
+void loop() {
+  float lux = lightMeter.readLightLevel();
+
+  Serial.print("Lux: ");
+  Serial.println(lux);
+
+  // If it is bright, lights must stay off
+  if (lux >= DARK_THRESHOLD) {
+    digitalWrite(led1, LOW);
+    digitalWrite(led2, LOW);
+    lightsOnUntil = 0;
+    Serial.println("light detected - Lights OFF");
+  } 
+  else {
+    // Dark + motion interrupt happened
+    if (motionFlag) {
+      motionFlag = false;
+      lightsOnUntil = millis() + ON_TIME;
+      Serial.println("Dark + motion detected - Lights ON");
+    }
+
+    // Dark + switch interrupt happened
+    if (switchFlag) {
+      switchFlag = false;
+      lightsOnUntil = millis() + ON_TIME;
+      Serial.println("Dark + switch used - Lights ON");
+    }
+
+    // Keep lights on while timer is active
+    if (millis() < lightsOnUntil) {
+      digitalWrite(led1, HIGH);
+      digitalWrite(led2, HIGH);
+    } else {
+      digitalWrite(led1, LOW);
+      digitalWrite(led2, LOW);
+    }
+  }
+
+  delay(100);
+}
+
+
