@@ -1,0 +1,193 @@
+#include <SPI.h>
+#include <WiFiNINA.h>
+#include <PubSubClient.h>
+
+// WiFi details
+const char* ssid = "Emily";
+const char* password = "rosepatricia";
+
+// MQTT broker
+const char* mqttServer = "broker.emqx.io";
+const int mqttPort = 1883;
+
+// Use a unique client ID for each Arduino board
+const char* clientID = "SIT210_LindaRoom_01";
+const char* studentName = "Emily";
+
+// Topics
+const char* topicWave = "ES/Wave";
+const char* topicPat  = "ES/Pat";
+
+// Pin definitions
+const int trigPin = 5;
+const int echoPin = 4;
+const int ledHallway = 3;
+const int ledBathroom = 2;
+
+WiFiClient wifiClient;
+PubSubClient client(wifiClient);
+
+// Gesture settings
+const float detectDistance = 15.0;
+const unsigned long waveMaxTime = 500;
+const unsigned long patMinTime  = 800;
+const unsigned long cooldownTime = 1500;
+
+bool objectDetected = false;
+unsigned long detectStartTime = 0;
+unsigned long lastGestureTime = 0;
+
+void setup() {
+  Serial.begin(9600);
+  while (!Serial);
+
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+
+  pinMode(ledHallway, OUTPUT);
+  pinMode(ledBathroom, OUTPUT);
+
+  digitalWrite(ledHallway, LOW);
+  digitalWrite(ledBathroom, LOW);
+
+  connectToWiFi();
+
+  client.setServer(mqttServer, mqttPort);
+  client.setCallback(mqttCallback);
+}
+
+void loop() {
+  if (WiFi.status() != WL_CONNECTED) {
+    connectToWiFi();
+  }
+
+  if (!client.connected()) {
+    reconnectMQTT();
+  }
+
+  client.loop();
+  handleGesture();
+}
+
+void connectToWiFi() {
+  Serial.print("Connecting to WiFi");
+
+  while (WiFi.begin(ssid, password) != WL_CONNECTED) {
+    delay(3000);
+  }
+
+  Serial.println();
+  Serial.println("WiFi connected");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+}
+
+void reconnectMQTT() {
+  while (!client.connected()) {
+    Serial.print("Connecting to MQTT... ");
+
+    if (client.connect(clientID)) {
+      Serial.println("connected");
+
+      client.subscribe(topicWave);
+      client.subscribe(topicPat);
+
+      Serial.println("Subscribed to ES/Wave and ES/Pat");
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" retrying in 3 seconds");
+      delay(3000);
+    }
+  }
+}
+
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  String message = "";
+
+  for (unsigned int i = 0; i < length; i++) {
+    message += (char)payload[i];
+  }
+
+  Serial.print("Message arrived on topic: ");
+  Serial.println(topic);
+  Serial.print("Message: ");
+  Serial.println(message);
+
+  if (String(topic) == topicWave) {
+    digitalWrite(ledHallway, HIGH);
+    digitalWrite(ledBathroom, HIGH);
+    Serial.println("Both LEDs turned ON");
+  }
+
+  if (String(topic) == topicPat) {
+    digitalWrite(ledHallway, LOW);
+    digitalWrite(ledBathroom, LOW);
+    Serial.println("Both LEDs turned OFF");
+  }
+}
+
+float readDistanceCM() {
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  long duration = pulseIn(echoPin, HIGH, 30000);
+
+  if (duration == 0) {
+    return -1;
+  }
+
+  float distance = duration * 0.0343 / 2.0;
+  return distance;
+}
+
+void handleGesture() {
+  if (millis() - lastGestureTime < cooldownTime) {
+    return;
+  }
+
+  float distance = readDistanceCM();
+
+  if (distance > 0 && distance < detectDistance) {
+    if (!objectDetected) {
+      objectDetected = true;
+      detectStartTime = millis();
+    }
+  } else {
+    if (objectDetected) {
+      unsigned long gestureDuration = millis() - detectStartTime;
+
+      if (gestureDuration <= waveMaxTime) {
+        Serial.println("Wave detected");
+        publishWave();
+        lastGestureTime = millis();
+      } else if (gestureDuration >= patMinTime) {
+        Serial.println("Pat detected");
+        publishPat();
+        lastGestureTime = millis();
+      }
+
+      objectDetected = false;
+    }
+  }
+
+  delay(50);
+}
+
+void publishWave() {
+  String payload = String(studentName);
+  client.publish(topicWave, payload.c_str());
+  Serial.print("Published to ES/Wave: ");
+  Serial.println(payload);
+}
+
+void publishPat() {
+  String payload = String(studentName);
+  client.publish(topicPat, payload.c_str());
+  Serial.print("Published to ES/Pat: ");
+  Serial.println(payload);
+}
