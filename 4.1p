@@ -1,4 +1,3 @@
-
 #include <Wire.h>
 #include <BH1750.h>
 
@@ -11,18 +10,20 @@ const int led1 = 5;
 const int led2 = 6;
 
 // Threshold for dark
-const float DARK_THRESHOLD = 50;
+const float DARK_THRESHOLD = 50.0;
 
-// Lights stay on for 5 seconds
+// Lights stay on for 5 seconds after motion
 const unsigned long ON_TIME = 5000;
 
 // Interrupt flags
 volatile bool motionFlag = false;
 volatile bool switchFlag = false;
 
-// Timer
+// State variables
 unsigned long lightsOnUntil = 0;
+bool manualSwitchOn = false;
 
+//ISR FUNCTIONS 
 void motionISR() {
   motionFlag = true;
 }
@@ -31,6 +32,69 @@ void switchISR() {
   switchFlag = true;
 }
 
+// HELPER FUNCTIONS 
+void handleMotionEvent(float lux) {
+  if (motionFlag) {
+    motionFlag = false;
+
+    if (lux < DARK_THRESHOLD) {
+      lightsOnUntil = millis() + ON_TIME;
+      Serial.println("Event: Motion detected in dark -> LEDs ON for 5 seconds");
+    } else {
+      Serial.println("Event: Motion detected but environment is bright -> LEDs remain OFF");
+    }
+  }
+}
+
+void handleSwitchEvent(float lux) {
+  if (switchFlag) {
+    switchFlag = false;
+
+    // INPUT_PULLUP:
+    // LOW  = switch ON
+    // HIGH = switch OFF
+    manualSwitchOn = (digitalRead(switchPin) == LOW);
+
+    if (manualSwitchOn) {
+      if (lux < DARK_THRESHOLD) {
+        Serial.println("Event: Manual switch ON in dark -> LEDs ON");
+      } else {
+        Serial.println("Event: Manual switch ON but environment is bright -> LEDs remain OFF");
+      }
+    } else {
+      Serial.println("Event: Manual switch OFF -> LEDs OFF");
+    }
+  }
+}
+
+void updateLights(float lux) {
+  // Bright condition always forces lights OFF
+  if (lux >= DARK_THRESHOLD) {
+    digitalWrite(led1, LOW);
+    digitalWrite(led2, LOW);
+    Serial.println("System: Bright environment detected -> LEDs OFF");
+    return;
+  }
+
+  // Dark condition
+  if (manualSwitchOn) {
+    digitalWrite(led1, HIGH);
+    digitalWrite(led2, HIGH);
+    Serial.println("System: Manual switch is ON -> LEDs ON");
+  } 
+  else if (millis() < lightsOnUntil) {
+    digitalWrite(led1, HIGH);
+    digitalWrite(led2, HIGH);
+    Serial.println("System: Motion timer active -> LEDs ON");
+  } 
+  else {
+    digitalWrite(led1, LOW);
+    digitalWrite(led2, LOW);
+    Serial.println("System: No motion timer and manual switch OFF -> LEDs OFF");
+  }
+}
+
+// SETUP 
 void setup() {
   Serial.begin(9600);
   Wire.begin();
@@ -46,8 +110,11 @@ void setup() {
   digitalWrite(led2, LOW);
 
   attachInterrupt(digitalPinToInterrupt(motionPin), motionISR, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(switchPin), switchISR, FALLING);
+  attachInterrupt(digitalPinToInterrupt(switchPin), switchISR, CHANGE);
+
+  Serial.println("System started");
 }
+
 
 void loop() {
   float lux = lightMeter.readLightLevel();
@@ -55,39 +122,9 @@ void loop() {
   Serial.print("Lux: ");
   Serial.println(lux);
 
-  // If it is bright, lights must stay off
-  if (lux >= DARK_THRESHOLD) {
-    digitalWrite(led1, LOW);
-    digitalWrite(led2, LOW);
-    lightsOnUntil = 0;
-    Serial.println("light detected - Lights OFF");
-  } 
-  else {
-    // Dark + motion interrupt happened
-    if (motionFlag) {
-      motionFlag = false;
-      lightsOnUntil = millis() + ON_TIME;
-      Serial.println("Dark + motion detected - Lights ON");
-    }
+  handleMotionEvent(lux);
+  handleSwitchEvent(lux);
+  updateLights(lux);
 
-    // Dark + switch interrupt happened
-    if (switchFlag) {
-      switchFlag = false;
-      lightsOnUntil = millis() + ON_TIME;
-      Serial.println("Dark + switch used - Lights ON");
-    }
-
-    // Keep lights on while timer is active
-    if (millis() < lightsOnUntil) {
-      digitalWrite(led1, HIGH);
-      digitalWrite(led2, HIGH);
-    } else {
-      digitalWrite(led1, LOW);
-      digitalWrite(led2, LOW);
-    }
-  }
-
-  delay(100);
+  delay(200);
 }
-
-
