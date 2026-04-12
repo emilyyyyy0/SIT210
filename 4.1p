@@ -50,9 +50,6 @@ void handleSwitchEvent(float lux) {
   if (switchFlag) {
     switchFlag = false;
 
-    // INPUT_PULLUP:
-    // LOW  = switch ON
-    // HIGH = switch OFF
     manualSwitchOn = (digitalRead(switchPin) == LOW);
 
     if (manualSwitchOn) {
@@ -128,3 +125,4 @@ void loop() {
 
   delay(200);
 }
+
