@@ -1,0 +1,67 @@
+from gpiozero import LED
+import tkinter as tk
+
+LIVING = LED(17)
+BATHROOM = LED(27)
+CLOSET = LED(22)
+
+def select_light():
+    choice = selected_room.get()
+    print("seleted", choice)
+    
+    if choice == "living":
+        LIVING.on()
+        BATHROOM.off()
+        CLOSET.off()
+        
+    elif choice == "bathroom":
+        LIVING.off()
+        BATHROOM.on()
+        CLOSET.off()
+        
+    elif choice == "closet":
+        LIVING.off()
+        BATHROOM.off()
+        CLOSET.on()
+
+def exit_program():
+    print("EXIT CLICKED") 
+    
+    # turn everything off
+    LIVING.off()
+    BATHROOM.off()
+    CLOSET.off()
+    
+    # cleanup GPIO
+    LIVING.close()
+    BATHROOM.close()
+    CLOSET.close()
+    
+    window.destroy()
+# window
+window = tk.Tk()
+window.title("Light Control")
+window.geometry("400x300")
+
+selected_room = tk.StringVar(value="none")
+
+tk.Label(window, text="Select Room Light", font=("Arial", 14)).pack(pady=10)
+
+tk.Radiobutton(window, text="Living Room",
+               variable=selected_room, value="living",
+               command=select_light).pack(anchor="w", padx=20)
+
+tk.Radiobutton(window, text="Bathroom",
+               variable=selected_room, value="bathroom",
+               command=select_light).pack(anchor="w", padx=20)
+
+tk.Radiobutton(window, text="Closet",
+               variable=selected_room, value="closet",
+               command=select_light).pack(anchor="w", padx=20)
+
+tk.Button(window, text="Exit",
+          command=exit_program).pack(pady=20)
+
+window.protocol("WM_DELETE_WINDOW", exit_program)
+
+window.mainloop()
