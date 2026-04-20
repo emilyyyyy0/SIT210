@@ -1,0 +1,84 @@
+from gpiozero import PWMLED, LED
+import tkinter as tk
+
+# Use PWMLED for brightness control
+LIVING = PWMLED(17)
+BATHROOM = LED(27)
+CLOSET = LED(22)
+
+def select_light():
+    choice = selected_room.get()
+    print("selected", choice)
+    
+    if choice == "living":
+        # Enable slider control
+        brightness_slider.config(state="normal")
+        BATHROOM.off()
+        CLOSET.off()
+        
+    elif choice == "bathroom":
+        brightness_slider.config(state="disabled")
+        LIVING.off()
+        BATHROOM.on()
+        CLOSET.off()
+        
+    elif choice == "closet":
+        brightness_slider.config(state="disabled")
+        LIVING.off()
+        BATHROOM.off()
+        CLOSET.on()
+
+def update_brightness(val):
+    # Scale gives 0–100
+    brightness = float(val) / 100
+    LIVING.value = brightness
+    print("Living brightness:", brightness)
+
+def exit_program():
+    print("EXIT CLICKED") 
+    
+    LIVING.off()
+    BATHROOM.off()
+    CLOSET.off()
+    
+    LIVING.close()
+    BATHROOM.close()
+    CLOSET.close()
+    
+    window.destroy()
+
+# window
+window = tk.Tk()
+window.title("Light Control")
+window.geometry("400x350")
+
+selected_room = tk.StringVar(value="none")
+
+tk.Label(window, text="Select Room Light", font=("Arial", 14)).pack(pady=10)
+
+tk.Radiobutton(window, text="Living Room",
+               variable=selected_room, value="living",
+               command=select_light).pack(anchor="w", padx=20)
+
+tk.Radiobutton(window, text="Bathroom",
+               variable=selected_room, value="bathroom",
+               command=select_light).pack(anchor="w", padx=20)
+
+tk.Radiobutton(window, text="Closet",
+               variable=selected_room, value="closet",
+               command=select_light).pack(anchor="w", padx=20)
+
+# Brightness slider (disabled by default)
+brightness_slider = tk.Scale(window, from_=0, to=100,
+                             orient="horizontal",
+                             label="Living Room Brightness",
+                             command=update_brightness,
+                             state="disabled")
+brightness_slider.pack(pady=15)
+
+tk.Button(window, text="Exit",
+          command=exit_program).pack(pady=20)
+
+window.protocol("WM_DELETE_WINDOW", exit_program)
+
+window.mainloop()
