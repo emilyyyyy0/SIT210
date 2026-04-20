@@ -1,0 +1,144 @@
+//arduino code: 
+#include <WiFiNINA.h> 
+
+//WIFI CREDENTIALS 
+const char* ssid = "Lexie&Emily";
+const char* password = "Tn2ubS2S!";
+
+WiFiServer server(80); //CREATES A WEB SERVER ON PORT 80 -ALLOWS ARDUINO TO RECIEVE 
+
+//PIN DECLERATIONS 
+const int LIVING = 2;
+const int BATHROOM = 3;
+const int CLOSET = 4;
+
+void setup() {
+  //start serial monitor 
+  Serial.begin(9600); 
+  while (!Serial);
+
+//pin setup 
+  pinMode(LIVING, OUTPUT);
+  pinMode(BATHROOM, OUTPUT);
+  pinMode(CLOSET, OUTPUT);
+
+//start with all leds off 
+  digitalWrite(LIVING, LOW);
+  digitalWrite(BATHROOM, LOW);
+  digitalWrite(CLOSET, LOW);
+
+//connect wifi
+  Serial.print("Connecting to WiFi");
+  WiFi.begin(ssid, password); //start wifi 
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print("."); //tracks to see we still connecting 
+  }
+
+  Serial.println();
+  Serial.println("Connected!");
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.localIP()); //prints the ip which is used in HTML code 
+
+  server.begin();
+}
+
+//v v important - which led is going on/off
+void setLight(String room, String state) {
+  int pin = -1;
+
+  if (room.indexOf("living%20room") != -1) {
+    pin = LIVING; //checks if for living if yes then sends it correct pin 
+  } else if (room.indexOf("bathroom") != -1) {
+    pin = BATHROOM; //checks if for bathroom
+  } else if (room.indexOf("closet") != -1) {
+    pin = CLOSET; //checks if for closet 
+  }
+//does user want it on or off
+  if (pin != -1) {
+    if (state.indexOf("on") != -1) {
+      digitalWrite(pin, HIGH); //led on
+      Serial.println("Light turned ON"); //print in monitor 
+    } else if (state.indexOf("off") != -1) {
+      digitalWrite(pin, LOW); //led off
+      Serial.println("Light turned OFF"); //print in monitor 
+    }
+  }
+}
+
+void loop() {
+  WiFiClient client = server.available();
+//if client connection detetced:
+  if (client) {
+    while (client.connected() && !client.available()) {
+      delay(1);
+    }
+
+    if (client.available()) { //read the GET request 
+      String request = client.readStringUntil('\r');
+      Serial.println(request);
+
+      if (request.indexOf("/light?") != -1) { //checks it is a valid request 
+        String room = "";
+        String state = "";
+
+        //find the index of reuest (what is it asking)
+        int roomStart = request.indexOf("room=");
+        int stateStart = request.indexOf("&state=");
+
+        //gets room and state from request URL 
+        if (roomStart != -1 && stateStart != -1) {
+          room = request.substring(roomStart, stateStart);
+          state = request.substring(stateStart + 7);
+          setLight(room, state); //calls on the setlight function to update 
+        }
+      }
+
+      client.println("HTTP/1.1 200 OK");
+      client.println("Content-Type: text/plain");
+      client.println("Access-Control-Allow-Origin: *");
+      client.println("Connection: close");
+      client.println();
+      client.println("OK");
+    }
+
+    delay(1);
+    client.stop();
+  }
+}
+
+HTML: 
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Linda's Light Control</title>
+</head>
+<body>
+  <!-- FRONT END INTERFACE  -->
+  <h1>Linda's Light Control</h1>
+
+  <h2>Living Room</h2> <!-- living button   -->
+  <button onclick="controlLight('living room','on')">ON</button> <!-- ON   -->
+  <button onclick="controlLight('living room','off')">OFF</button> <!-- OFF  -->
+
+  <h2>Bathroom</h2> <!-- Bathroom  -->
+  <button onclick="controlLight('bathroom','on')">ON</button> <!-- ON  -->
+  <button onclick="controlLight('bathroom','off')">OFF</button> <!-- OFF  -->
+
+  <h2>Closet</h2> <!--CLOSET BOTTUN   -->
+  <button onclick="controlLight('closet','on')">ON</button> <!-- ON  -->
+  <button onclick="controlLight('closet','off')">OFF</button> <!--  OFF -->
+
+  <!-- SENDS TO ARDUINO (ARDUINO IP) - COMMUNICATION BETWEEN HTML PAGE AND ARDUINO -->
+  <script>
+    function controlLight(room, state) {
+      const deviceIP = "http://192.168.0.18";   //ARDUINOS IP 
+      fetch(`${deviceIP}/light?room=${encodeURIComponent(room)}&state=${state}`) //WHEN BUTTON HIT - SENDS GET REQUEST (FETCH)
+        .then(response => response.text()) //RECIEVES RESPONSE FROM ARDUINO 
+        .then(data => console.log(data)) //SENDS DATA (WHAT ROOM AND ON OR OFF)
+        .catch(error => console.log("Error:", error)); //CREATES ERROR IF REQUIRED 
+    }
+  </script>
+</body>
+</html>
