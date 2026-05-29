@@ -5,12 +5,13 @@ from datetime import datetime
 from flask import Flask, render_template_string, request, redirect
 import paho.mqtt.client as mqtt
 
-app = Flask(__name__)
+app = Flask(__name__ #create flask web app
 
-CONFIG_FILE = "node_config.json"
+CONFIG_FILE = "node_config.json" #stores each crop type for each node
 
-latest_nodes = {}
+latest_nodes = {} #stores mqtt data
 
+#profiles
 crop_profiles = {
     "Leafy greens": {
         "min_moisture": 60,
@@ -63,14 +64,14 @@ crop_profiles = {
 }
 
 
-def load_node_config():
+def load_node_config(): #loads saved node crop settings 
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "r") as file:
             return json.load(file)
     return {}
 
 
-def save_node_config(config):
+def save_node_config(config): #check file exists
     with open(CONFIG_FILE, "w") as file:
         json.dump(config, file, indent=4)
 
@@ -78,7 +79,7 @@ def save_node_config(config):
 node_crop_map = load_node_config()
 
 
-def check_thresholds(data):
+def check_thresholds(data): //thresholdss
     node_id = data.get("nodeID", "unknown")
 
     crop_type = node_crop_map.get(node_id, "Leafy greens")
@@ -109,23 +110,23 @@ def check_thresholds(data):
         alerts.append("TOO MUCH LIGHT")
 
     if not alerts:
-        alerts.append("OK")
+        alerts.append("OK") //if no alerts we okay
 
     return crop_type, ", ".join(alerts)
 
-
+#on connection 
 def on_connect(client, userdata, flags, rc):
-    print("Connected to MQTT broker:", rc)
-    client.subscribe("farm/+/data")
+    print("Connected to MQTT broker:", rc) #print connect
+    client.subscribe("farm/+/data") #subscribe the farm topic
 
-
+#on message
 def on_message(client, userdata, msg):
     global latest_nodes
 
     try:
-        data = json.loads(msg.payload.decode())
-
-        node_id = data.get("nodeID", "unknown")
+        data = json.loads(msg.payload.decode()) //decode to python
+print data
+        node_id = data.get("nodeID", "unknown") 
         crop_type, status = check_thresholds(data)
 
         data["crop"] = crop_type
@@ -137,18 +138,18 @@ def on_message(client, userdata, msg):
         print("Updated:", data)
 
     except Exception as e:
-        print("Error reading MQTT message:", e)
+        print("Error reading MQTT message:", e) //error msg instead of crashing
 
 
 def mqtt_thread():
     client = mqtt.Client()
-    client.on_connect = on_connect
-    client.on_message = on_message
+    client.on_connect = on_connect //connects functions
+    client.on_message = on_message //connects functions 
 
-    client.connect("localhost", 1883, 60)
-    client.loop_forever()
+    client.connect("localhost", 1883, 60) //connect to mqtt
+    client.loop_forever() //loops 
 
-
+#homepage route
 @app.route("/")
 def dashboard():
     html = """
@@ -217,7 +218,7 @@ def dashboard():
 
         {% if nodes %}
         <div class="grid">
-            {% for node, data in nodes.items() %}
+            {% for node, data in nodes.items() %} //for each node
             <div class="card">
                 <h2>{{ node }}</h2>
                 <div class="value"><b>Crop:</b> {{ data.crop }}</div>
@@ -243,17 +244,17 @@ def dashboard():
     """
     return render_template_string(html, nodes=latest_nodes)
 
-
+#configuration page 
 @app.route("/config", methods=["GET", "POST"])
 def config():
     global node_crop_map
 
     if request.method == "POST":
-        node_id = request.form["nodeID"]
+        node_id = request.form["nodeID"] 
         crop_type = request.form["cropType"]
 
         node_crop_map[node_id] = crop_type
-        save_node_config(node_crop_map)
+        save_node_config(node_crop_map) 
 
         return redirect("/config")
 
@@ -374,14 +375,14 @@ def config():
         nodes=node_crop_map
     )
 
-
+#delete button
 @app.route("/delete/<node_id>")
 def delete_node(node_id):
     global node_crop_map
 
     if node_id in node_crop_map:
-        del node_crop_map[node_id]
-        save_node_config(node_crop_map)
+        del node_crop_map[node_id] //delete from map
+        save_node_config(node_crop_map) 
 
     return redirect("/config")
 threading.Thread(target=mqtt_thread, daemon=True).start()
