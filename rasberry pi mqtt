@@ -2,14 +2,14 @@ import json
 import paho.mqtt.client as mqtt
 
 # Loaded by Flask/dashboard code
-node_crop_map = {}
+node_crop_map = {} #stores node crop type 
 
 latest_nodes = {}
 
 def check_thresholds(data):
-    node_id = data.get("nodeID")
+    node_id = data.get("nodeID") 
 
-    crop_type = node_crop_map.get(node_id)
+    crop_type = node_crop_map.get(node_id) 
 
     if not crop_type:
         return "UNASSIGNED_NODE"
