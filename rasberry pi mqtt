@@ -1,0 +1,90 @@
+import json
+import paho.mqtt.client as mqtt
+
+# Loaded by Flask/dashboard code
+node_crop_map = {}
+
+latest_nodes = {}
+
+def check_thresholds(data):
+    node_id = data.get("nodeID")
+
+    crop_type = node_crop_map.get(node_id)
+
+    if not crop_type:
+        return "UNASSIGNED_NODE"
+
+    profile = crop_profiles[crop_type]
+
+    alerts = []
+
+    moisture = float(data.get("moisture", 0))
+    temperature = float(data.get("temperature", 0))
+    light = float(data.get("light", 0))
+
+    if moisture < profile["min_moisture"]:
+        alerts.append("LOW_WATER")
+
+    if moisture > profile["max_moisture"]:
+        alerts.append("TOO_MUCH_WATER")
+
+    if temperature < profile["min_temp"]:
+        alerts.append("TOO_COLD")
+
+    if temperature > profile["max_temp"]:
+        alerts.append("TOO_HOT")
+
+    if light < profile["min_light"]:
+        alerts.append("LOW_LIGHT")
+
+    if light > profile["max_light"]:
+        alerts.append("TOO_MUCH_LIGHT")
+
+    if not alerts:
+        alerts.append("OK")
+
+    return ", ".join(alerts)
+
+
+def on_connect(client, userdata, flags, rc):
+    print("Connected to MQTT broker:", rc)
+
+    client.subscribe("farm/+/data")
+
+
+def on_message(client, userdata, msg):
+    global latest_nodes
+
+    try:
+        data = json.loads(msg.payload.decode())
+
+        node_id = data.get("nodeID")
+
+        status = check_thresholds(data)
+
+        latest_nodes[node_id] = {
+            "nodeID": node_id,
+            "temperature": data.get("temperature"),
+            "humidity": data.get("humidity"),
+            "light": data.get("light"),
+            "moisture": data.get("moisture"),
+            "crop": node_crop_map.get(node_id, "Not Assigned"),
+            "status": status
+        }
+
+        print(latest_nodes[node_id])
+
+    except Exception as e:
+        print("Error:", e)
+
+
+client = mqtt.Client()
+
+client.on_connect = on_connect
+client.on_message = on_message
+
+client.connect("localhost", 1883, 60)
+
+print("Waiting for messages...")
+
+client.loop_forever()
