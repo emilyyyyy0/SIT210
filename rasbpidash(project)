@@ -1,0 +1,389 @@
+import json
+import os
+import threading
+from datetime import datetime
+from flask import Flask, render_template_string, request, redirect
+import paho.mqtt.client as mqtt
+
+app = Flask(__name__)
+
+CONFIG_FILE = "node_config.json"
+
+latest_nodes = {}
+
+crop_profiles = {
+    "Leafy greens": {
+        "min_moisture": 60,
+        "max_moisture": 90,
+        "min_temp": 10,
+        "max_temp": 22,
+        "min_light": 40,
+        "max_light": 70
+    },
+    "Fruiting vegetables": {
+        "min_moisture": 50,
+        "max_moisture": 70,
+        "min_temp": 20,
+        "max_temp": 30,
+        "min_light": 70,
+        "max_light": 100
+    },
+    "Root crops": {
+        "min_moisture": 50,
+        "max_moisture": 65,
+        "min_temp": 12,
+        "max_temp": 24,
+        "min_light": 50,
+        "max_light": 80
+    },
+    "Grain crops": {
+        "min_moisture": 35,
+        "max_moisture": 55,
+        "min_temp": 18,
+        "max_temp": 32,
+        "min_light": 80,
+        "max_light": 100
+    },
+    "Tropical crops": {
+        "min_moisture": 75,
+        "max_moisture": 95,
+        "min_temp": 24,
+        "max_temp": 35,
+        "min_light": 70,
+        "max_light": 100
+    },
+    "Drought resistant crops": {
+        "min_moisture": 20,
+        "max_moisture": 40,
+        "min_temp": 25,
+        "max_temp": 40,
+        "min_light": 85,
+        "max_light": 100
+    }
+}
+
+
+def load_node_config():
+    if os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, "r") as file:
+            return json.load(file)
+    return {}
+
+
+def save_node_config(config):
+    with open(CONFIG_FILE, "w") as file:
+        json.dump(config, file, indent=4)
+
+
+node_crop_map = load_node_config()
+
+
+def check_thresholds(data):
+    node_id = data.get("nodeID", "unknown")
+
+    crop_type = node_crop_map.get(node_id, "Leafy greens")
+    profile = crop_profiles[crop_type]
+
+    alerts = []
+
+    moisture = float(data.get("moisture", 0))
+    temperature = float(data.get("temperature", 0))
+    light = float(data.get("light", 0))
+
+    if moisture < profile["min_moisture"]:
+        alerts.append("LOW WATER")
+
+    if moisture > profile["max_moisture"]:
+        alerts.append("TOO MUCH WATER")
+
+    if temperature < profile["min_temp"]:
+        alerts.append("TOO COLD")
+
+    if temperature > profile["max_temp"]:
+        alerts.append("TOO HOT")
+
+    if light < profile["min_light"]:
+        alerts.append("LOW LIGHT")
+
+    if light > profile["max_light"]:
+        alerts.append("TOO MUCH LIGHT")
+
+    if not alerts:
+        alerts.append("OK")
+
+    return crop_type, ", ".join(alerts)
+
+
+def on_connect(client, userdata, flags, rc):
+    print("Connected to MQTT broker:", rc)
+    client.subscribe("farm/+/data")
+
+
+def on_message(client, userdata, msg):
+    global latest_nodes
+
+    try:
+        data = json.loads(msg.payload.decode())
+
+        node_id = data.get("nodeID", "unknown")
+        crop_type, status = check_thresholds(data)
+
+        data["crop"] = crop_type
+        data["status"] = status
+        data["last_update"] = datetime.now().strftime("%H:%M:%S")
+
+        latest_nodes[node_id] = data
+
+        print("Updated:", data)
+
+    except Exception as e:
+        print("Error reading MQTT message:", e)
+
+
+def mqtt_thread():
+    client = mqtt.Client()
+    client.on_connect = on_connect
+    client.on_message = on_message
+
+    client.connect("localhost", 1883, 60)
+    client.loop_forever()
+
+
+@app.route("/")
+def dashboard():
+    html = """
+    <html>
+    <head>
+        <title>Smart Farming Dashboard</title>
+        <meta http-equiv="refresh" content="5">
+        <style>
+            body {
+                font-family: Arial;
+                background: #f1f8f4;
+                padding: 30px;
+            }
+            h1 {
+                text-align: center;
+                color: #2d6a4f;
+            }
+            .top-links {
+                text-align: center;
+                margin-bottom: 25px;
+            }
+            .top-links a {
+                background: #2d6a4f;
+                color: white;
+                padding: 10px 16px;
+                text-decoration: none;
+                border-radius: 8px;
+            }
+            .grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+                gap: 20px;
+            }
+            .card {
+                background: white;
+                padding: 22px;
+                border-radius: 15px;
+                box-shadow: 0 0 12px rgba(0,0,0,0.15);
+            }
+            .value {
+                font-size: 18px;
+                margin: 8px 0;
+            }
+            .status {
+                font-size: 22px;
+                font-weight: bold;
+                margin-top: 15px;
+                color: #d00000;
+            }
+            .ok {
+                color: #2d6a4f;
+            }
+            .waiting {
+                text-align: center;
+                font-size: 20px;
+                color: #555;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Smart Farming Dashboard</h1>
+
+        <div class="top-links">
+            <a href="/config">Configure Crop Nodes</a>
+        </div>
+
+        {% if nodes %}
+        <div class="grid">
+            {% for node, data in nodes.items() %}
+            <div class="card">
+                <h2>{{ node }}</h2>
+                <div class="value"><b>Crop:</b> {{ data.crop }}</div>
+                <div class="value"><b>Temperature:</b> {{ data.temperature }} °C</div>
+                <div class="value"><b>Humidity:</b> {{ data.humidity }}%</div>
+                <div class="value"><b>Light:</b> {{ data.light }}%</div>
+                <div class="value"><b>Moisture:</b> {{ data.moisture }}%</div>
+                <div class="value"><b>Last Update:</b> {{ data.last_update }}</div>
+
+                {% if data.status == "OK" %}
+                    <div class="status ok">Status: {{ data.status }}</div>
+                {% else %}
+                    <div class="status">Status: {{ data.status }}</div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+            <div class="waiting">Waiting for sensor data...</div>
+        {% endif %}
+    </body>
+    </html>
+    """
+    return render_template_string(html, nodes=latest_nodes)
+
+
+@app.route("/config", methods=["GET", "POST"])
+def config():
+    global node_crop_map
+
+    if request.method == "POST":
+        node_id = request.form["nodeID"]
+        crop_type = request.form["cropType"]
+
+        node_crop_map[node_id] = crop_type
+        save_node_config(node_crop_map)
+
+        return redirect("/config")
+
+    html = """
+    <html>
+    <head>
+        <title>Configure Crop Nodes</title>
+        <style>
+            body {
+                font-family: Arial;
+                background: #f1f8f4;
+                padding: 30px;
+            }
+            .card {
+                background: white;
+                padding: 25px;
+                border-radius: 15px;
+                max-width: 600px;
+                margin: auto;
+                box-shadow: 0 0 12px rgba(0,0,0,0.15);
+            }
+            h1 {
+                color: #2d6a4f;
+                text-align: center;
+            }
+            label {
+                display: block;
+                margin-top: 15px;
+                font-weight: bold;
+            }
+            input, select, button {
+                width: 100%;
+                padding: 10px;
+                margin-top: 5px;
+                font-size: 16px;
+            }
+            button {
+                background: #2d6a4f;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                margin-top: 20px;
+            }
+            a {
+                color: #2d6a4f;
+            }
+            .node-list {
+                margin-top: 25px;
+                padding: 15px;
+                background: #eef7f1;
+                border-radius: 10px;
+            }
+            .node-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                background: white;
+                padding: 10px;
+                margin-top: 8px;
+                border-radius: 8px;
+            }
+            .delete-button {
+                background: #d00000;
+                color: white;
+                padding: 6px 10px;
+                border-radius: 5px;
+                text-decoration: none;
+            }
+            .back-link {
+                display: block;
+                text-align: center;
+                margin-top: 20px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <h1>Configure Crop Nodes</h1>
+
+            <form method="POST">
+                <label>Node ID</label>
+                <input name="nodeID" placeholder="Example: node1" required>
+
+                <label>Crop Type</label>
+                <select name="cropType">
+                    {% for crop in crops %}
+                        <option value="{{ crop }}">{{ crop }}</option>
+                    {% endfor %}
+                </select>
+
+                <button type="submit">Save Crop Profile</button>
+            </form>
+
+            <div class="node-list">
+                <h3>Current Node Settings</h3>
+
+                {% if nodes %}
+                    {% for node, crop in nodes.items() %}
+                        <div class="node-row">
+                            <span><b>{{ node }}</b> → {{ crop }}</span>
+                            <a class="delete-button" href="/delete/{{ node }}">Delete</a>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <p>No crop nodes configured yet.</p>
+                {% endif %}
+            </div>
+
+            <a class="back-link" href="/">Back to Dashboard</a>
+        </div>
+    </body>
+    </html>
+    """
+
+    return render_template_string(
+        html,
+        crops=crop_profiles.keys(),
+        nodes=node_crop_map
+    )
+
+
+@app.route("/delete/<node_id>")
+def delete_node(node_id):
+    global node_crop_map
+
+    if node_id in node_crop_map:
+        del node_crop_map[node_id]
+        save_node_config(node_crop_map)
+
+    return redirect("/config")
+threading.Thread(target=mqtt_thread, daemon=True).start()
+
+app.run(host="0.0.0.0", port=5000)
