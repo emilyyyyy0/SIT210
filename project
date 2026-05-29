@@ -13,20 +13,20 @@ DHT dht(DHTPIN, DHTTYPE);
 BH1750 lightMeter;
 
 // Node identity
-String nodeID = "node1";
+String nodeID = "node1"; //CHANGE THIS FOR EACH NODE eg second plant node2
 
 // WiFi
 char ssid[] = "Emily";
 char pass[] = "rosepatricia";
 
 // Raspberry Pi MQTT broker IP
-char mqttServer[] = "172.20.10.8";   // change this
+char mqttServer[] = "172.20.10.8";   // WOULD NEED TO CHANGE THIS TO YOUR OWN IP TO RUN ON YOUR DEVICES
 int mqttPort = 1883;
 
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 
-const char* mqttTopic = "farm/node1/data";
+const char* mqttTopic = "farm/node1/data"; //CHANGE THIS FOR EACH NODE eg second plant "farm/node2/data"
 
 //connect to wifi
 void connectWiFi() {
